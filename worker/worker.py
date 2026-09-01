@@ -22,6 +22,22 @@ def process_media():
         with conn.cursor() as cursor:
             cursor.execute(
                 """
+                UPDATE media
+                SET status = 'queued',
+                    processing_started_at = NULL
+                WHERE status = 'processing'
+                AND processing_started_at < CURRENT_TIMESTAMP - INTERVAL '5 minutes'
+                """
+            )
+
+            recovered = cursor.rowcount
+
+            if recovered:
+                print(f"Recovered {recovered} stale job(s)", flush=True)
+
+            conn.commit()
+            cursor.execute(
+                """
                 SELECT id, title
                 FROM media
                 WHERE status = 'queued'
@@ -44,7 +60,8 @@ def process_media():
             cursor.execute(
                 """
                 UPDATE media
-                SET status = 'processing'
+                SET status = 'processing',
+                    processing_started_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 """,
                 (media_id,),
@@ -61,7 +78,8 @@ def process_media():
             cursor.execute(
                 """
                 UPDATE media
-                SET status = 'ready'
+                SET status = 'ready',
+                    processing_started_at = NULL
                 WHERE id = %s
                 """,
                 (media_id,),

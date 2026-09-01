@@ -14,4 +14,4 @@ spec:
     spec:
       containers:
         - name: media-worker
-          image: media-worker:v2
+          image: media-worker:v4
