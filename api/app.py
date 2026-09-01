@@ -50,7 +50,7 @@ class Handler(BaseHTTPRequestHandler):
                     with conn.cursor() as cursor:
                         cursor.execute(
                             """
-                            SELECT id, title, file_path, media_type, created_at
+                            SELECT id, title, file_path, media_type, status, created_at
                             FROM media
                             ORDER BY id
                             """
@@ -67,12 +67,53 @@ class Handler(BaseHTTPRequestHandler):
                             "title": row[1],
                             "file_path": row[2],
                             "media_type": row[3],
-                            "created_at": row[4].isoformat(),
+                            "status": row[4],
+                            "created_at": row[5].isoformat(),
                         }
                     )
 
                 self.send_json(200, media)
 
+            except Exception as e:
+                self.send_json(500, {"error": str(e)})
+
+            return
+
+        if self.path.startswith("/media/"):
+            try:
+                media_id = int(self.path.split("/")[-1])
+
+                with get_db_connection() as conn:
+                    with conn.cursor() as cursor:
+                        cursor.execute(
+                            """
+                            SELECT id, title, file_path, media_type, status, created_at
+                            FROM media
+                            WHERE id = %s
+                            """,
+                            (media_id,),
+                        )
+
+                        row = cursor.fetchone()
+
+                if row is None:
+                    self.send_json(404, {"error": "Media not found"})
+                    return
+
+                self.send_json(
+                    200,
+                    {
+                        "id": row[0],
+                        "title": row[1],
+                        "file_path": row[2],
+                        "media_type": row[3],
+                        "status": row[4],
+                        "created_at": row[5].isoformat(),
+                    },
+                )
+
+            except ValueError:
+                self.send_json(400, {"error": "Invalid media ID"})
             except Exception as e:
                 self.send_json(500, {"error": str(e)})
 
@@ -98,13 +139,12 @@ class Handler(BaseHTTPRequestHandler):
                 with conn.cursor() as cursor:
                     cursor.execute(
                         """
-                        INSERT INTO media (title, file_path, media_type)
-                        VALUES (%s, %s, %s)
-                        RETURNING id, title, file_path, media_type, created_at
+                        INSERT INTO media (title, file_path, media_type, status)
+                        VALUES (%s, %s, %s, %s)
+                        RETURNING id, title, file_path, media_type, status, created_at
                         """,
-                        (title, file_path, media_type),
+                        (title, file_path, media_type, "queued"),
                     )
-
                     row = cursor.fetchone()
 
             self.send_json(
@@ -114,12 +154,48 @@ class Handler(BaseHTTPRequestHandler):
                     "title": row[1],
                     "file_path": row[2],
                     "media_type": row[3],
-                    "created_at": row[4].isoformat(),
+                    "status": row[4],
+                    "created_at": row[5].isoformat(),
                 },
             )
 
         except Exception as e:
             self.send_json(400, {"error": str(e)})
+
+    def do_DELETE(self):
+        if not self.path.startswith("/media/"):
+            self.send_json(404, {"error": "Not Found"})
+            return
+
+        try:
+            media_id = int(self.path.split("/")[-1])
+
+            with get_db_connection() as conn:
+                with conn.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        DELETE FROM media
+                        WHERE id = %s
+                        RETURNING id
+                        """,
+                        (media_id,),
+                    )
+
+                    row = cursor.fetchone()
+
+            if row is None:
+                self.send_json(404, {"error": "Media not found"})
+                return
+
+            self.send_json(
+                200,
+                {"message": "Media deleted", "id": row[0]},
+            )
+
+        except ValueError:
+            self.send_json(400, {"error": "Invalid media ID"})
+        except Exception as e:
+            self.send_json(500, {"error": str(e)})
 
 
 server = HTTPServer(("0.0.0.0", 8080), Handler)
@@ -127,4 +203,3 @@ server = HTTPServer(("0.0.0.0", 8080), Handler)
 print(f"API listening on port 8080 - {socket.gethostname()}")
 
 server.serve_forever()
-
